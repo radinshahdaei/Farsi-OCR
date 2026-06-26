@@ -1,170 +1,83 @@
-# Farsi/Persian Book OCR Pipeline for macOS Apple Silicon
+# Farsi Book OCR Pipeline
 
-This project OCRs a long Persian/Farsi scanned book PDF on a Mac M1/M2/M3.
+OCR and LLM-correct Persian/Farsi scanned books on macOS.
 
-It uses:
-
-- **OCRmyPDF** to add a searchable OCR layer to PDF pages.
-- **Tesseract** with the Persian language model `fas`.
-- A Python wrapper that splits a long PDF into chunks, OCRs each chunk, resumes after failures, and merges the output back into one searchable PDF plus one `.txt` file.
-
-## 1. Install system tools
-
-Install Homebrew first if you do not already have it.
-
-Then:
+## Setup
 
 ```bash
-brew update
-brew install ocrmypdf
-brew install tesseract-lang
-```
+# 1. Install system tools
+brew install ocrmypdf tesseract-lang
 
-Check that Persian/Farsi is installed:
-
-```bash
-tesseract --list-langs | grep fas
-```
-
-You should see:
-
-```text
-fas
-```
-
-## 2. Create a Python virtual environment
-
-From this project folder:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
+# 2. Python environment
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+
+# 3. API credentials (for LLM correction)
+cp .env.example .env
+# Edit .env — add your DeepSeek API key
 ```
 
-## 3. Put your book in the project folder
-
-Example:
+## Run
 
 ```bash
-mkdir -p input
-cp /path/to/your/book.pdf input/book.pdf
-```
+# Activate
+source .venv/bin/activate
 
-## 4. Run OCR
-
-For a Persian-only book:
-
-```bash
-python -m farsi_book_ocr.ocr_book input/book.pdf --lang fas --jobs 4 --pages-per-chunk 25
-```
-
-For Persian + English:
-
-```bash
-python -m farsi_book_ocr.ocr_book input/book.pdf --lang fas+eng --jobs 4 --pages-per-chunk 25
-```
-
-Outputs will be written to:
-
-```text
-output/book_ocr.pdf
-output/book_ocr.txt
-work/book/
-```
-
-## 5. Resume after interruption
-
-Just run the same command again. Finished chunks are skipped automatically.
-
-```bash
-python -m farsi_book_ocr.ocr_book input/book.pdf --lang fas+eng --jobs 4 --pages-per-chunk 25
-```
-
-## 6. Start over
-
-Use `--redo` to delete previous chunk results for this book and rerun all chunks.
-
-```bash
-python -m farsi_book_ocr.ocr_book input/book.pdf --lang fas+eng --jobs 4 --pages-per-chunk 25 --redo
-```
-
-## Recommended settings for a 600-page book
-
-Start with:
-
-```bash
+# OCR the book
 python -m farsi_book_ocr.ocr_book input/book.pdf \
-  --lang fas+eng \
-  --jobs 4 \
-  --pages-per-chunk 25 \
-  --deskew \
-  --rotate-pages
+  --lang fas+eng --jobs 4 --pages-per-chunk 25 \
+  --deskew --rotate-pages
+
+# Estimate LLM correction cost
+python -m farsi_book_ocr.correct_text output/book_ocr.txt --estimate-only
+
+# LLM correction
+python -m farsi_book_ocr.correct_text output/book_ocr.txt
 ```
 
-For an M1 MacBook Air, keep `--jobs 3` or `--jobs 4` to avoid overheating. For an M1 Pro/Max or desktop Mac, try `--jobs 6` or `--jobs 8`.
+Output: `output/book_ocr.pdf` (searchable), `output/book_ocr.txt` (text), `output/book_ocr.corrected.txt` (LLM-corrected).
 
-## Accuracy tips
+## OCR Pipeline
 
-- Best input: 300 DPI grayscale or black-and-white scans.
-- Use `--deskew` for crooked scans.
-- Use `--rotate-pages` if some pages are sideways or upside down.
-- Use `--lang fas+eng` if the book has page headers, footnotes, citations, or numbers in English.
-- Avoid aggressive cleaning unless needed. It can sometimes damage dots/diacritics in Persian text.
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--lang fas+eng` | `fas` | Tesseract language(s) |
+| `--jobs 4` | auto | Parallel chunks |
+| `--pages-per-chunk 25` | 25 | Pages per OCR chunk |
+| `--deskew` | off | Straighten crooked scans |
+| `--rotate-pages` | off | Fix page orientation |
+| `--first-page / --last-page` | 1 / end | OCR a page range |
+| `--redo` | off | Start fresh |
 
-## Useful extra commands
+Resumable — re-run the same command to pick up where you left off.
 
-Run only selected pages first, for a test:
+## LLM Correction
+
+Uses DeepSeek to fix residual Persian OCR errors (dot confusion, Arabic characters, spacing). Credentials are loaded from `.env`.
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--pages-per-request 2` | 2 | Chunks per API call |
+| `--estimate-only` | off | Show cost, no API calls |
+| `--redo` | off | Re-correct all pages |
+
+Resumable — completed batches are skipped on re-run.
+
+**Pricing:** token estimates are approximate (Persian ≈ 2 chars/token). Hardcoded at DeepSeek V4 rates: $0.14/M input, $0.28/M output. Verify at [deepseek.com](https://api-docs.deepseek.com/quick_start/pricing).
+
+## Utilities
 
 ```bash
-python -m farsi_book_ocr.ocr_book input/book.pdf --first-page 1 --last-page 10 --lang fas+eng --jobs 4
-```
+# Check tools are installed
+python -m farsi_book_ocr.check_install
 
-Extract plain text from an already OCRed PDF:
-
-```bash
-python -m farsi_book_ocr.extract_text output/book_ocr.pdf output/book_extracted.txt
-```
-
-Normalize Persian text after OCR:
-
-```bash
+# Rule-based Persian text normalization (no LLM)
 python -m farsi_book_ocr.normalize_text output/book_ocr.txt output/book_ocr.normalized.txt
+
+# Extract text from any searchable PDF
+python -m farsi_book_ocr.extract_text output/book_ocr.pdf output/extracted.txt
 ```
 
-## Troubleshooting
+## Sample Output
 
-### `fas` not found
-
-Run:
-
-```bash
-brew install tesseract-lang
-brew reinstall tesseract-lang
-```
-
-Then check:
-
-```bash
-tesseract --list-langs | grep fas
-```
-
-### OCRmyPDF says a PDF already has text
-
-This project passes `--skip-text` by default. If you want OCR to replace existing text, use:
-
-```bash
-python -m farsi_book_ocr.ocr_book input/book.pdf --force-ocr
-```
-
-### A chunk keeps failing
-
-Try smaller chunks:
-
-```bash
-python -m farsi_book_ocr.ocr_book input/book.pdf --pages-per-chunk 10 --lang fas+eng --jobs 3
-```
-
-Then inspect the failed chunk in `work/<book-name>/chunks/`.
-
+See [`sample-output/`](sample-output/) — first 100 pages of "توسعه و تضاد" by فرامرز رفیع پور, before and after LLM correction.
