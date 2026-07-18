@@ -1,6 +1,9 @@
 # Farsi Book OCR
 
-OCR and LLM-correct Persian/Farsi scanned books.
+Pipeline for OCR-ing Persian/Farsi scanned books and pamphlets (جزوه) — used for
+digitizing printed Islamic studies and sociology texts. Produces searchable PDFs
+and plain text, with optional LLM correction to fix residual OCR errors in
+Persian script.
 
 ## Setup
 
@@ -36,11 +39,4 @@ Output: searchable PDF + plain text. Correction uses the page-safe pipeline — 
 | OCR | `ocr_book.py` | Splits PDF into chunks, runs OCRmyPDF+Tesseract, merges results |
 | Normalize | `normalize_text.py` | Unicode NFC, Arabic→Persian letters, whitespace cleanup |
 | Correct | `correct_text.py` | Page-safe LLM correction with validation, retry, and caching |
-
-## Tests
-
-```bash
-pip install pytest
-pytest  # 184 tests, zero network calls
-```
 
