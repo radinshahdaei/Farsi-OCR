@@ -44,6 +44,3 @@ pip install pytest
 pytest  # 184 tests, zero network calls
 ```
 
-## License
-
-MIT
