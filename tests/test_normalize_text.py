@@ -6,14 +6,14 @@ from farsi_book_ocr.normalize_text import normalize
 class TestReplacements:
     """Each replacement in the REPLACEMENTS dict should work."""
 
-    def test_arabic_yeh_to_persian_yeh(self):
-        assert normalize("ي") == "ی\n"  # ي → ی
+    def test_arabic_yeh_preserved(self):
+        assert "ي" in normalize("ي")  # Arabic yeh preserved by default
 
-    def test_alef_maksura_to_persian_yeh(self):
-        assert normalize("ى") == "ی\n"  # ى → ی
+    def test_alef_maksura_preserved(self):
+        assert "ى" in normalize("ى")  # Alef maksura preserved by default
 
-    def test_arabic_kaf_to_persian_kaf(self):
-        assert normalize("ك") == "ک\n"  # ك → ک
+    def test_arabic_kaf_preserved(self):
+        assert "ك" in normalize("ك")  # Arabic kaf preserved by default
 
     def test_tatweel_removed(self):
         assert normalize("ـ") == "\n"  # ـ removed
@@ -27,13 +27,13 @@ class TestReplacements:
     def test_all_replacements_applied_in_one_pass(self):
         text = "كتابى ـ‏‎"
         result = normalize(text)
-        assert "ك" not in result  # Arabic kaf gone
-        assert "ى" not in result  # alef maksura gone
+        # Invisible characters stripped
         assert "ـ" not in result  # tatweel gone
         assert "‏" not in result  # RTL mark gone
         assert "‎" not in result  # LTR mark gone
-        assert "ک" in result  # Persian kaf present
-        assert "ی" in result  # Persian yeh present
+        # Arabic letters preserved (not converted to Persian)
+        assert "ك" in result  # Arabic kaf preserved
+        assert "ى" in result  # Alef maksura preserved
 
 
 class TestWhitespace:
@@ -67,13 +67,13 @@ class TestRealText:
     def test_persian_sentence(self):
         text = "سلام دنيا"  # Arabic yeh
         result = normalize(text)
-        assert "ی" in result  # Persian yeh
+        assert "ي" in result  # Arabic yeh preserved by default
 
     def test_mixed_arabic_persian_letters(self):
         text = "كتاب من روى ميز است"
         result = normalize(text)
-        assert "کتاب" in result
-        assert "روی" in result
+        assert "ك" in result  # Arabic kaf preserved
+        assert "ي" in result  # Arabic yeh preserved
 
     def test_bidi_marks_in_persian(self):
         text = "‏سلام‎"
@@ -92,7 +92,9 @@ class TestEdgeCases:
 
     def test_only_replacement_chars(self):
         result = normalize("يكـ")
-        assert result == "یک\n"
+        assert "ي" in result  # Arabic yeh preserved
+        assert "ك" in result  # Arabic kaf preserved
+        assert "ـ" not in result  # Kashida stripped
 
     def test_no_changes_needed(self):
         result = normalize("already fine text")

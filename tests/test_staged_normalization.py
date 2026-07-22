@@ -4,6 +4,7 @@ from farsi_book_ocr.normalize_text import (
     NormalizationConfig,
     normalize,
     normalize_arabic_safe,
+    normalize_persian,
     normalize_preserve_layout,
 )
 
@@ -100,17 +101,37 @@ class TestPresetConfigs:
         assert "ك" in result  # Arabic kaf preserved
         assert "الل" in result  # Arabic lam preserved
 
-    def test_default_config_backward_compatible(self):
-        """Default normalize() matches original behavior."""
+    def test_default_is_arabic_safe(self):
+        """Default normalize() preserves Arabic letters."""
         text = "كتابى ـ‏‎"
         result = normalize(text)
-        # All Arabic→Persian conversions applied
-        assert "ك" not in result
-        assert "ى" not in result
+        # Invisible characters stripped
         assert "ـ" not in result
         assert "‏" not in result
         assert "‎" not in result
+        # Arabic letters preserved
+        assert "ك" in result
+        assert "ى" in result
+
+
+class TestPersianPreset:
+    def test_converts_arabic_to_persian(self):
+        text = "كتابي"
+        result = normalize_persian(text)
         assert "کتابی" in result
+        assert "ك" not in result  # Arabic kaf converted
+        assert "ي" not in result  # Arabic yeh converted
+
+    def test_applies_persian_normalizations(self):
+        result = normalize_persian("ة")
+        assert result.strip() == "ه"
+
+    def test_invisible_chars_stripped(self):
+        text = "متـن‏‎"
+        result = normalize_persian(text)
+        assert "ـ" not in result
+        assert "‏" not in result
+        assert "‎" not in result
 
 
 class TestConfigImmutability:

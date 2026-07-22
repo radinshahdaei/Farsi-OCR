@@ -26,8 +26,14 @@ python -m farsi_book_ocr.correct_text output/book_ocr.txt --estimate-only
 # LLM correction
 python -m farsi_book_ocr.correct_text output/book_ocr.txt
 
-# Rule-based normalization (no LLM)
+# Rule-based normalization (no LLM) — safe default, preserves Arabic
 python -m farsi_book_ocr.normalize_text output/book_ocr.txt output/normalized.txt
+
+# Aggressive normalization for pure Persian (converts Arabic→Persian letters)
+python -m farsi_book_ocr.normalize_text output/book_ocr.txt output/normalized.txt --persian
+
+# Preserve table layout and line breaks
+python -m farsi_book_ocr.normalize_text output/book_ocr.txt output/normalized.txt --preserve-layout
 ```
 
 Output: searchable PDF + plain text. Correction uses the page-safe pipeline — every LLM response is validated before acceptance, and no pages are silently dropped.
@@ -37,6 +43,6 @@ Output: searchable PDF + plain text. Correction uses the page-safe pipeline — 
 | Stage | Module | Description |
 |---|---|---|
 | OCR | `ocr_book.py` | Splits PDF into chunks, runs OCRmyPDF+Tesseract, merges results |
-| Normalize | `normalize_text.py` | Unicode NFC, Arabic→Persian letters, whitespace cleanup |
+| Normalize | `normalize_text.py` | Unicode NFC, strip invisible chars, whitespace cleanup (Arabic-safe default) |
 | Correct | `correct_text.py` | Page-safe LLM correction with validation, retry, and caching |
 
