@@ -18,7 +18,7 @@ cp .env.example .env  # add your API key
 
 ```bash
 # OCR a scanned PDF
-python -m farsi_book_ocr.ocr_book input/book.pdf --lang fas+eng
+python -m farsi_book_ocr.ocr_book input/book.pdf --lang fas+ara+eng
 
 # Estimate correction cost
 python -m farsi_book_ocr.correct_text output/book_ocr.txt --estimate-only

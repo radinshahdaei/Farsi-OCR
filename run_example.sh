@@ -5,7 +5,7 @@ source .venv/bin/activate
 
 # OCR the book
 python -m farsi_book_ocr.ocr_book input/book.pdf \
-  --lang fas+eng --jobs 4 --pages-per-chunk 25 \
+  --lang fas+ara+eng --jobs 4 --pages-per-chunk 25 \
   --deskew --rotate-pages
 
 # Estimate cost

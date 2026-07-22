@@ -218,7 +218,7 @@ def merge_text(sidecars: list[Path], out_txt: Path) -> None:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="OCR a long Persian/Farsi scanned book PDF in resumable chunks.")
     parser.add_argument("pdf", type=Path, help="Input PDF path")
-    parser.add_argument("--lang", default="fas", help="Tesseract language string, e.g. fas or fas+eng")
+    parser.add_argument("--lang", default="fas+ara+eng", help="Tesseract language string, e.g. fas+ara+eng")
     parser.add_argument("--jobs", type=int, default=max(1, min(4, (os.cpu_count() or 4) // 2)), help="OCRmyPDF parallel jobs per chunk")
     parser.add_argument("--pages-per-chunk", type=int, default=25, help="Pages per chunk")
     parser.add_argument("--first-page", type=int, default=1, help="First 1-based page to OCR")
