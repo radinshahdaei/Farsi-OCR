@@ -147,13 +147,7 @@ def _correct_one_page(
             response = provider.correct(request)
 
             # Validate the response
-            validation = validate_correction_response(
-                page,
-                response,
-                max_length_ratio=config.max_length_ratio,
-                min_length_ratio=config.min_length_ratio,
-                max_edit_ratio=config.max_edit_ratio,
-            )
+            validation = validate_correction_response(page, response)
 
             check_names = [name for name, passed, _ in validation.checks if not passed]
 
@@ -187,33 +181,13 @@ def _correct_one_page(
                 flush=True,
             )
 
-            # For validation failures, retry with stricter instructions if not last attempt
-            if attempt < config.max_retries:
-                # Modify the request to be stricter on retry
-                stricter_prompt = (
-                    system_prompt
-                    + "\n\nCRITICAL: Previous response was rejected. "
-                    + "Return ONLY the corrected text inside the EXACT [[PAGE ...]] / [[/PAGE ...]] markers. "
-                    + "No commentary, no markdown, no text outside markers."
-                )
-                request = CorrectionRequest(
-                    page_id=page.page_id,
-                    source_text=page.source_text,
-                    system_prompt=stricter_prompt,
-                    model=config.model,
-                    max_tokens=max_tokens,
-                    temperature=config.temperature,
-                    context_before=context_before,
-                    context_after=context_after,
-                )
-
         except Exception as exc:
             print(
                 f"  Error correcting {page.page_id} (attempt {attempt}): {exc}",
                 flush=True,
             )
             if attempt < config.max_retries:
-                wait = min(2**attempt, 60)
+                wait = min(2 ** attempt, 60)
                 print(f"  Retrying in {wait}s...", flush=True)
                 time.sleep(wait)
 

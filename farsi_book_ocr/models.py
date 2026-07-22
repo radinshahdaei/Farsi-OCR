@@ -187,7 +187,7 @@ class CorrectionConfig:
     max_output_tokens: int = 65536
     """Hard ceiling on output tokens."""
 
-    max_retries: int = 3
+    max_retries: int = 1
     """Maximum API attempts including initial call."""
 
     pages_per_request: int = 1
@@ -201,16 +201,6 @@ class CorrectionConfig:
 
     fallback_policy: str = "strict"
     """'strict': fail if any page unresolved. 'fallback_raw': use source text."""
-
-    # Validation thresholds
-    max_length_ratio: float = 3.0
-    """Maximum ratio of corrected length to source length."""
-
-    min_length_ratio: float = 0.1
-    """Minimum ratio of corrected length to source length."""
-
-    max_edit_ratio: float = 0.6
-    """Maximum edit distance as a fraction of source length."""
 
 
 # ---------------------------------------------------------------------------

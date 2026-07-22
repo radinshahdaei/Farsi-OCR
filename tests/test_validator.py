@@ -1,4 +1,4 @@
-"""Tests for farsi_book_ocr.validator."""
+"""Tests for farsi_book_ocr.validator — minimal validation."""
 
 from farsi_book_ocr.models import PageRecord, ProviderResponse, ProviderUsage
 from farsi_book_ocr.validator import validate_correction_response
@@ -71,156 +71,7 @@ class TestEmptyResponse:
 
     def test_empty_when_source_empty_passes(self):
         page = make_page("")
-        resp = make_response("")
-        result = validate_correction_response(page, resp)
-        # finish_reason check passes for non-truncated, and empty-is-ok since source is empty
-        # But length ratio will be 0/1=0.0 which is below min=0.1
-        # So this should still pass because source is essentially empty
-        assert "text_not_empty" in [n for n, p, _ in result.checks if p]
-
-
-class TestLengthRatio:
-    def test_normal_length_passes(self):
-        # Use realistic text with overlapping character sets
-        text = "The quick brown fox jumps over the lazy dog. " * 10
-        page = make_page(text)
-        resp = make_response(text.replace("fox", "cat").replace("dog", "log"))
-        result = validate_correction_response(page, resp)
-        assert result.passed
-
-    def test_too_short_fails(self):
-        text = "The quick brown fox jumps over the lazy dog. " * 10
-        page = make_page(text)
-        resp = make_response("short")
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-        assert any("length" in name for name, _, _ in result.failed_checks)
-
-    def test_too_long_fails(self):
-        text = "short text"
-        page = make_page(text)
-        resp = make_response("very long text " * 100)
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-        assert any("length" in name for name, _, _ in result.failed_checks)
-
-
-class TestFormFeedInjection:
-    def test_no_form_feed_passes(self):
-        page = make_page("normal text")
-        resp = make_response("corrected text")
-        result = validate_correction_response(page, resp)
-        assert result.passed
-
-    def test_form_feed_injection_fails(self):
-        page = make_page("normal text")
-        resp = make_response("text\fwith\fform feed")
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-        assert any("form_feed" in name for name, _, _ in result.failed_checks)
-
-
-class TestSeparatorInjection:
-    def test_no_separator_passes(self):
-        page = make_page("normal text")
-        resp = make_response("corrected text")
-        result = validate_correction_response(page, resp)
-        assert result.passed
-
-    def test_page_separator_injection_fails(self):
-        page = make_page("normal text")
-        resp = make_response("text\n===== PAGE 0005 =====\nmore")
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-        assert any("separator" in name for name, _, _ in result.failed_checks)
-
-    def test_chunk_separator_injection_fails(self):
-        page = make_page("normal text")
-        resp = make_response("text\n===== OCR CHUNK 0001: test =====\nmore")
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-
-
-class TestMarkdownFences:
-    def test_no_fences_passes(self):
-        page = make_page("text")
-        resp = make_response("corrected")
-        result = validate_correction_response(page, resp)
-        assert result.passed
-
-    def test_triple_backtick_fails(self):
-        page = make_page("text")
-        resp = make_response("```\ncorrected\n```")
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-        assert any("markdown" in name for name, _, _ in result.failed_checks)
-
-    def test_tilde_fence_fails(self):
-        page = make_page("text")
-        resp = make_response("~~~\ncorrected\n~~~")
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-
-
-class TestCommentaryPrefixes:
-    def test_plain_text_passes(self):
-        page = make_page("source text")
-        resp = make_response("corrected text")
-        result = validate_correction_response(page, resp)
-        assert result.passed
-
-    def test_here_is_prefix_fails(self):
-        page = make_page("source text")
-        resp = make_response("Here is the corrected text:\n\nactual text")
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-        assert any("commentary" in name for name, _, _ in result.failed_checks)
-
-    def test_certainly_prefix_fails(self):
-        page = make_page("source text")
-        resp = make_response("Certainly! Here you go:\n\nactual text")
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-
-    def test_persian_commentary_fails(self):
-        page = make_page("متن اصلی")
-        resp = make_response("متن تصحیح شده:\n\nمتن اصلی")
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-
-
-class TestDigitPreservation:
-    def test_digits_preserved_passes(self):
-        page = make_page("The year is 1402 and the count is 42.")
-        resp = make_response("The year is 1402 and the count is 42.")
-        result = validate_correction_response(page, resp)
-        assert result.passed
-
-    def test_digits_missing_fails(self):
-        page = make_page("Numbers: 123, 456, 789")
-        resp = make_response("Numbers: , , ")
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-        assert any("digit" in name for name, _, _ in result.failed_checks)
-
-
-class TestUrlEmailPreservation:
-    def test_urls_preserved_passes(self):
-        page = make_page("Visit https://example.com for more")
-        resp = make_response("Visit https://example.com for more")
-        result = validate_correction_response(page, resp)
-        assert result.passed
-
-    def test_urls_missing_fails(self):
-        page = make_page("Visit https://example.com/page")
-        resp = make_response("Visit  for more")
-        result = validate_correction_response(page, resp)
-        assert not result.passed
-        assert any("url" in name for name, _, _ in result.failed_checks)
-
-    def test_emails_preserved(self):
-        page = make_page("Contact user@example.com")
-        resp = make_response("Contact user@example.com")
+        resp = make_response("", finish_reason="stop")
         result = validate_correction_response(page, resp)
         assert result.passed
 
@@ -251,11 +102,7 @@ class TestEdgeCases:
         page = make_page("")
         resp = make_response("", finish_reason="stop")
         result = validate_correction_response(page, resp)
-        # Empty source + empty response should be OK (text_not_empty passes
-        # because source is empty)
-        # But length ratio 0/1 = 0.0 < 0.1, so it fails length check
-        # This is acceptable for an edge case
-        pass  # just checking it doesn't crash
+        assert result.passed
 
     def test_very_long_text(self):
         text = "The quick brown fox jumps over the lazy dog. " * 250

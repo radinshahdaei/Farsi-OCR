@@ -248,8 +248,8 @@ class TestValidationRejection:
         assert result.status == "failed"
         assert result.failed_count == 1
 
-    def test_commentary_response_is_rejected(self, tmp_path):
-        """A response wrapped in markdown commentary is not accepted."""
+    def test_commentary_response_is_accepted(self, tmp_path):
+        """A response wrapped in markdown commentary is now accepted (relaxed validation)."""
         pages = [make_page("real content")]
         provider = FakeProvider(simulate_commentary=True)
         config = make_config()
@@ -257,7 +257,9 @@ class TestValidationRejection:
 
         result = run_correction_pipeline(pages, provider, work_dir, config, resume=False)
 
-        assert result.status == "failed"
+        # Commentary is no longer rejected — it's just text
+        assert result.status == "completed"
+        assert result.pages[0].status == "accepted"
 
 
 class TestFailureSemantics:

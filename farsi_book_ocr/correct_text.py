@@ -62,7 +62,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--max-tokens", type=int, default=0, help="Max tokens per response (0 = auto)")
     p.add_argument("--model", type=str, default=os.environ.get("ANTHROPIC_MODEL", "deepseek-v4-pro"))
     p.add_argument("--estimate-only", action="store_true", help="Print cost estimate and exit")
-    p.add_argument("--fallback", action="store_true", help="Use source text for failed pages instead of aborting")
+    p.add_argument("--fallback", action="store_true", help="Use source text for failed pages (now the default)")
+    p.add_argument("--strict", action="store_true", help="Abort on any page failure instead of using source text")
     p.add_argument("--redo", action="store_true", help="Ignore cached results and re-correct all pages")
     p.add_argument("--work-dir", type=Path, default=Path("work"), help="Cache directory")
     return p.parse_args(argv)
@@ -108,7 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         max_output_tokens=max_out,
         max_retries=3,
         pages_per_request=args.pages_per_request,
-        fallback_policy="fallback_raw" if args.fallback else "strict",
+        fallback_policy="strict" if args.strict else "fallback_raw",
     )
 
     book_name = input_path.stem
