@@ -9,3 +9,5 @@ work/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+CLAUDE.md
+COMMIT_CONVENTIONS.md
