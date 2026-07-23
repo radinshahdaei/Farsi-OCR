@@ -74,13 +74,13 @@ class NormalizationConfig:
     remove_bidi_marks: bool = True
     """Strip RTL/LTR mark characters (U+200F, U+200E)."""
 
-    normalize_whitespace: bool = True
+    normalize_whitespace: bool = False
     """Collapse multiple spaces/tabs and reduce excessive blank lines."""
 
     normalize_line_endings: bool = True
     """Convert \\r\\n and \\r to \\n."""
 
-    strip_trailing: bool = True
+    strip_trailing: bool = False
     """Strip leading/trailing whitespace and ensure trailing newline."""
 
 
@@ -149,19 +149,10 @@ def normalize(text: str, config: NormalizationConfig | None = None) -> str:
 def normalize_preserve_layout(text: str) -> str:
     """Normalize text while preserving layout (table spacing, line breaks).
 
-    Useful for pages with tables, contents pages with dotted leaders, etc.
+    This is now the default behavior of normalize(). Kept as an
+    explicit alias for backward compatibility.
     """
-    config = NormalizationConfig(
-        apply_nfc=True,
-        arabic_to_persian=True,
-        persian_normalizations=False,  # Preserve Arabic forms
-        remove_kashida=True,
-        remove_bidi_marks=True,
-        normalize_whitespace=False,  # Keep layout
-        normalize_line_endings=True,
-        strip_trailing=False,  # Keep exact whitespace
-    )
-    return normalize(text, config)
+    return normalize(text)
 
 
 def normalize_arabic_safe(text: str) -> str:
@@ -170,8 +161,8 @@ def normalize_arabic_safe(text: str) -> str:
     Use for texts that contain Quranic verses, Arabic quotations, or
     Arabic poetry alongside Persian text.
 
-    Note: This is the same as the default normalize() behavior.
-    Kept as a self-documenting alias for clarity.
+    Also collapses whitespace — unlike the default normalize() which
+    now preserves layout.
     """
     config = NormalizationConfig(
         apply_nfc=True,
@@ -223,7 +214,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--preserve-layout", action="store_true",
-        help="Preserve table spacing and line breaks",
+        help="Preserve table spacing and line breaks (now the default)",
     )
     parser.add_argument(
         "--arabic-safe", action="store_true",

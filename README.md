@@ -17,23 +17,14 @@ cp .env.example .env  # add your API key
 ## Usage
 
 ```bash
-# OCR a scanned PDF
+# 1. OCR a scanned PDF
 python -m farsi_book_ocr.ocr_book input/book.pdf --lang fas+ara+eng
 
-# Estimate correction cost
-python -m farsi_book_ocr.correct_text output/book_ocr.txt --estimate-only
+# 2. Normalize the OCR output (preserves layout by default)
+python -m farsi_book_ocr.normalize_text output/book_ocr.txt output/book_normalized.txt
 
-# LLM correction
-python -m farsi_book_ocr.correct_text output/book_ocr.txt
-
-# Rule-based normalization (no LLM) — safe default, preserves Arabic
-python -m farsi_book_ocr.normalize_text output/book_ocr.txt output/normalized.txt
-
-# Aggressive normalization for pure Persian (converts Arabic→Persian letters)
-python -m farsi_book_ocr.normalize_text output/book_ocr.txt output/normalized.txt --persian
-
-# Preserve table layout and line breaks
-python -m farsi_book_ocr.normalize_text output/book_ocr.txt output/normalized.txt --preserve-layout
+# 3. LLM correction
+python -m farsi_book_ocr.correct_text output/book_normalized.txt
 ```
 
 Output: searchable PDF + plain text. Correction uses the page-safe pipeline — every LLM response is validated before acceptance, and no pages are silently dropped.
@@ -41,8 +32,7 @@ Output: searchable PDF + plain text. Correction uses the page-safe pipeline — 
 ## Pipeline
 
 | Stage | Module | Description |
-|---|---|---|
+| --- | --- | --- |
 | OCR | `ocr_book.py` | Splits PDF into chunks, runs OCRmyPDF+Tesseract, merges results |
-| Normalize | `normalize_text.py` | Unicode NFC, strip invisible chars, whitespace cleanup (Arabic-safe default) |
+| Normalize | `normalize_text.py` | Unicode NFC, strip invisible chars, preserve layout (Arabic-safe default) |
 | Correct | `correct_text.py` | Page-safe LLM correction with validation, retry, and caching |
-

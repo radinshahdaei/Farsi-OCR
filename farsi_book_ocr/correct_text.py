@@ -4,8 +4,8 @@ Uses the page-safe correction pipeline with response validation,
 retry, caching, and deterministic assembly.
 
 Example:
-    python -m farsi_book_ocr.correct_text output/book_ocr.txt
-    python -m farsi_book_ocr.correct_text output/book_ocr.txt --estimate-only
+    python -m farsi_book_ocr.correct_text output/book_normalized.txt
+    python -m farsi_book_ocr.correct_text output/book_normalized.txt --estimate-only
 """
 
 from __future__ import annotations
@@ -32,21 +32,9 @@ load_dotenv(_load_dotenv_path)
 
 _CHARS_PER_TOKEN = 2.0
 
-# DeepSeek V4 pricing per 1M tokens (verify at deepseek.com)
-_PRICE_INPUT = 0.14
-_PRICE_OUTPUT = 0.28
-
 
 def estimate_tokens(text: str) -> int:
     return max(1, int(len(text) / _CHARS_PER_TOKEN))
-
-
-def estimate_cost(input_chars: int, output_chars: int) -> tuple[float, float, float]:
-    input_tokens = max(1, int(input_chars / _CHARS_PER_TOKEN))
-    output_tokens = max(1, int(output_chars / _CHARS_PER_TOKEN))
-    input_cost = (input_tokens / 1_000_000) * _PRICE_INPUT
-    output_cost = (output_tokens / 1_000_000) * _PRICE_OUTPUT
-    return input_cost, output_cost, input_cost + output_cost
 
 
 # ---------------------------------------------------------------------------
@@ -84,12 +72,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.estimate_only:
         pages = split_text_into_pages(text, input_path.stem)
         total_chars = sum(len(p.source_text) for p in pages)
-        in_cost, out_cost, total = estimate_cost(total_chars, total_chars)
         est_tokens = max(1, int(total_chars / _CHARS_PER_TOKEN))
         print(f"Pages: {len(pages)}")
         print(f"Chars: {total_chars:,}")
         print(f"Est. tokens (input+output): ~{est_tokens:,} each")
-        print(f"Est. cost: ${total:.4f} (input ${in_cost:.4f} + output ${out_cost:.4f})")
         return 0
 
     # ---- correction ----

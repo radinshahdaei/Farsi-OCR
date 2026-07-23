@@ -18,6 +18,8 @@ Common Persian OCR errors to correct:
 STRICT RULES:
 1. Return ONLY the corrected text inside the [[PAGE ...]] markers
 2. Do NOT add, remove, or reorder [[PAGE ...]] / [[/PAGE ...]] markers
+   - If multiple pages are provided, correct each one and keep them in order
+   - Each page must appear exactly once with its original [[PAGE page-XXXXXX]] header
 3. Do NOT summarize, translate, paraphrase, explain, or improve the writing
 4. Do NOT delete any content — every sentence and paragraph must be preserved
 5. Preserve all numbers, dates, names, URLs, email addresses, and quotations exactly

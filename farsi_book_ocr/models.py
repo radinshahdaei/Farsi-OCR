@@ -224,9 +224,6 @@ class CorrectionRunResult:
     total_output_tokens: int = 0
     """Sum of output tokens across all API calls."""
 
-    total_cost_estimate: float | None = None
-    """Estimated cost in USD if pricing is known."""
-
     @property
     def accepted_count(self) -> int:
         return sum(1 for p in self.pages if p.status == "accepted")

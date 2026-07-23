@@ -25,10 +25,6 @@ load_dotenv(_load_dotenv_path)
 # Token estimation: Persian ~ 1 token per 2 chars (conservative)
 _CHARS_PER_TOKEN = 2.0
 
-# DeepSeek V4 pricing per 1M tokens
-_DEFAULT_PRICE_INPUT = 0.14
-_DEFAULT_PRICE_OUTPUT = 0.28
-
 
 def _get_env_or_die(name: str) -> str:
     value = os.environ.get(name)
@@ -149,8 +145,3 @@ class DeepSeekProvider(CorrectionProvider):
             raw_status_code=http_response.status_code,
         )
 
-    @staticmethod
-    def estimate_cost(input_tokens: int, output_tokens: int) -> float:
-        return (input_tokens / 1_000_000) * _DEFAULT_PRICE_INPUT + (
-            output_tokens / 1_000_000
-        ) * _DEFAULT_PRICE_OUTPUT
