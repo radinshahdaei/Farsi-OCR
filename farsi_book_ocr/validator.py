@@ -5,9 +5,12 @@ Only checks for actual data loss — no cosmetic or statistical checks.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from farsi_book_ocr.models import PageRecord, ProviderResponse
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -61,4 +64,10 @@ def validate_correction_response(
     ))
 
     passed = all(p for _, p, _ in checks)
+    logger.info(
+        "validate: src_len=%d cor_len=%d finish=%s → %s (%s)",
+        len(source_text), len(corrected_text), response.finish_reason,
+        "PASS" if passed else "FAIL",
+        ", ".join(f"{n}={p}" for n, p, _ in checks),
+    )
     return ValidationResult(passed=passed, checks=checks)

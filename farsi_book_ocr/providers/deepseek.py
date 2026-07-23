@@ -8,6 +8,8 @@ Uses the Anthropic Messages API format. Configured via environment variables:
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -18,13 +20,11 @@ from dotenv import load_dotenv
 from farsi_book_ocr.models import CorrectionRequest, ProviderResponse, ProviderUsage
 from farsi_book_ocr.providers.base import CorrectionProvider
 
+logger = logging.getLogger(__name__)
+
 # Load .env from project root
 _load_dotenv_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(_load_dotenv_path)
-
-# Token estimation: Persian ~ 1 token per 2 chars (conservative)
-_CHARS_PER_TOKEN = 2.0
-
 
 def _get_env_or_die(name: str) -> str:
     value = os.environ.get(name)
@@ -66,34 +66,58 @@ class DeepSeekProvider(CorrectionProvider):
     def base_url(self) -> str:
         return self._base_url
 
-    def estimate_tokens(self, text: str) -> int:
-        return max(1, int(len(text) / _CHARS_PER_TOKEN))
-
     def correct(self, request: CorrectionRequest) -> ProviderResponse:
+        user_message = self._build_user_message(request)
+        system_len = len(request.system_prompt)
+        user_len = len(user_message)
+
         payload = {
-            "model": request.model if request.model else self._model,
+            "model": (request.model or self._model).replace("[1m]", ""),
             "max_tokens": request.max_tokens,
             "system": request.system_prompt,
             "messages": [
-                {"role": "user", "content": self._build_user_message(request)},
+                {"role": "user", "content": user_message},
             ],
         }
 
         if request.temperature is not None:
             payload["temperature"] = request.temperature
 
+        logger.info(
+            "→ API request: page=%s model=%s system_len=%d user_len=%d max_tokens=%d",
+            request.page_id, payload["model"],
+            system_len, user_len, request.max_tokens,
+        )
+
         last_error: Exception | None = None
         for attempt in range(1 + self._max_retries):
             try:
                 response = self._send(payload)
+                logger.info(
+                    "← API response: page=%s status=%d finish=%s in=%d out=%d req_id=%s",
+                    request.page_id,
+                    response.raw_status_code,
+                    response.finish_reason,
+                    response.usage.input_tokens if response.usage else 0,
+                    response.usage.output_tokens if response.usage else 0,
+                    response.request_id or "-",
+                )
                 return response
             except (httpx.HTTPError, httpx.TimeoutException, RuntimeError) as exc:
                 last_error = exc
                 if attempt < self._max_retries:
                     wait = 2**attempt
+                    logger.warning(
+                        "API error (attempt %d/%d): %s — retrying in %ds",
+                        attempt + 1, self._max_retries + 1, exc, wait,
+                    )
                     print(f"  API error: {exc}. Retrying in {wait}s...", flush=True)
                     time.sleep(wait)
                 else:
+                    logger.error(
+                        "API request failed after %d attempts: %s",
+                        self._max_retries + 1, exc,
+                    )
                     raise RuntimeError(
                         f"API request failed after {self._max_retries + 1} attempts"
                     ) from last_error
@@ -112,6 +136,13 @@ class DeepSeekProvider(CorrectionProvider):
         return "\n\n".join(parts)
 
     def _send(self, payload: dict) -> ProviderResponse:
+        payload_json = json.dumps(payload, ensure_ascii=False)
+        payload_kb = len(payload_json) / 1024
+
+        url = f"{self._base_url}/v1/messages"
+        logger.info("HTTP POST %s (payload %.1f KB, timeout %ds)", url, payload_kb, self._timeout)
+
+        t0 = time.monotonic()
         with httpx.Client(
             base_url=self._base_url,
             headers={
@@ -122,8 +153,15 @@ class DeepSeekProvider(CorrectionProvider):
             timeout=self._timeout,
         ) as client:
             http_response = client.post("/v1/messages", json=payload)
+            elapsed = time.monotonic() - t0
             http_response.raise_for_status()
             body = http_response.json()
+
+        response_bytes = len(http_response.content)
+        logger.info(
+            "HTTP %d in %.1fs (response %.1f KB)",
+            http_response.status_code, elapsed, response_bytes / 1024,
+        )
 
         content = body.get("content", [])
         text_blocks = [b.get("text", "") for b in content if b.get("type") == "text"]
@@ -135,6 +173,12 @@ class DeepSeekProvider(CorrectionProvider):
         usage = ProviderUsage(
             input_tokens=usage_raw.get("input_tokens", 0),
             output_tokens=usage_raw.get("output_tokens", 0),
+        )
+
+        corrected_len = len("".join(text_blocks))
+        logger.info(
+            "response body: %d chars, %d text blocks, stop_reason=%s",
+            corrected_len, len(text_blocks), finish_reason,
         )
 
         return ProviderResponse(

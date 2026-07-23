@@ -19,14 +19,6 @@ class CorrectionProvider(ABC):
         """Send a correction request and return the normalized response."""
         ...
 
-    @abstractmethod
-    def estimate_tokens(self, text: str) -> int:
-        """Estimate the number of tokens in a given text.
-
-        Used for cost estimation and max_tokens auto-calculation.
-        """
-        ...
-
     @property
     @abstractmethod
     def provider_name(self) -> str:

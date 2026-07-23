@@ -55,9 +55,6 @@ class FakeProvider(CorrectionProvider):
     def call_count(self) -> int:
         return self._call_count
 
-    def estimate_tokens(self, text: str) -> int:
-        return max(1, len(text) // 2)
-
     def correct(self, request: CorrectionRequest) -> ProviderResponse:
         self._call_count += 1
 
@@ -89,8 +86,8 @@ class FakeProvider(CorrectionProvider):
             text=corrected,
             finish_reason="stop" if not self._simulate_truncation else "max_tokens",
             usage=ProviderUsage(
-                input_tokens=self.estimate_tokens(source),
-                output_tokens=self.estimate_tokens(corrected) + self._extra_tokens_per_call,
+                input_tokens=max(1, len(source) // 2),
+                output_tokens=max(1, len(corrected) // 2) + self._extra_tokens_per_call,
             ),
             request_id=f"fake-req-{self._call_count:04d}",
             raw_status_code=200 if not self._simulate_http_error else 500,

@@ -139,11 +139,6 @@ class TestFakeProvider:
         provider = FakeProvider()
         assert provider.provider_name == "fake"
 
-    def test_estimate_tokens(self):
-        provider = FakeProvider()
-        assert provider.estimate_tokens("hello") == 2  # 5 chars → 2 tokens
-        assert provider.estimate_tokens("") == 1  # minimum 1
-
     def test_usage_is_reported(self):
         provider = FakeProvider(extra_tokens_per_call=10)
         req = CorrectionRequest(

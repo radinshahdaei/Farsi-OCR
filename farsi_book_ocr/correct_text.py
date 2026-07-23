@@ -5,12 +5,12 @@ retry, caching, and deterministic assembly.
 
 Example:
     python -m farsi_book_ocr.correct_text output/book_normalized.txt
-    python -m farsi_book_ocr.correct_text output/book_normalized.txt --estimate-only
 """
 
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from pathlib import Path
@@ -27,17 +27,6 @@ _load_dotenv_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(_load_dotenv_path)
 
 # ---------------------------------------------------------------------------
-# Token estimation
-# ---------------------------------------------------------------------------
-
-_CHARS_PER_TOKEN = 2.0
-
-
-def estimate_tokens(text: str) -> int:
-    return max(1, int(len(text) / _CHARS_PER_TOKEN))
-
-
-# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -50,16 +39,24 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--context-pages", type=int, default=3, help="Context pages on each side of a batch")
     p.add_argument("--max-tokens", type=int, default=0, help="Max tokens per response (0 = auto)")
     p.add_argument("--model", type=str, default=os.environ.get("ANTHROPIC_MODEL", "deepseek-v4-pro"))
-    p.add_argument("--estimate-only", action="store_true", help="Print cost estimate and exit")
     p.add_argument("--fallback", action="store_true", help="Use source text for failed pages (now the default)")
     p.add_argument("--strict", action="store_true", help="Abort on any page failure instead of using source text")
     p.add_argument("--redo", action="store_true", help="Ignore cached results and re-correct all pages")
     p.add_argument("--work-dir", type=Path, default=Path("work"), help="Cache directory")
+    p.add_argument("--log", "-v", action="store_true", help="Verbose logging: show timing, tokens, and request details")
     return p.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
+
+    if args.log:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="[%(asctime)s] %(message)s",
+            datefmt="%H:%M:%S",
+            stream=sys.stderr,
+        )
 
     input_path = args.input.expanduser().resolve()
     if not input_path.exists():
@@ -68,16 +65,6 @@ def main(argv: list[str] | None = None) -> int:
     text = input_path.read_text(encoding="utf-8", errors="replace")
     if not text.strip():
         raise SystemExit("Input file is empty.")
-
-    # ---- estimate-only ----
-    if args.estimate_only:
-        pages = split_text_into_pages(text, input_path.stem)
-        total_chars = sum(len(p.source_text) for p in pages)
-        est_tokens = max(1, int(total_chars / _CHARS_PER_TOKEN))
-        print(f"Pages: {len(pages)}")
-        print(f"Chars: {total_chars:,}")
-        print(f"Est. tokens (input+output): ~{est_tokens:,} each")
-        return 0
 
     # ---- correction ----
     pages = split_text_into_pages(text, input_path.stem)
@@ -89,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
 
     config = CorrectionConfig(
         provider=provider.provider_name,
-        model=args.model,
+        model=args.model.replace("[1m]", ""),
         base_url=os.environ.get("ANTHROPIC_BASE_URL", ""),
         api_key=os.environ.get("ANTHROPIC_AUTH_TOKEN", ""),
         prompt_version="v1",

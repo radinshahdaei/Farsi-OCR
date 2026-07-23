@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from farsi_book_ocr.models import (
 )
 from farsi_book_ocr.providers.base import CorrectionProvider
 from farsi_book_ocr.validator import validate_correction_response
+
+logger = logging.getLogger(__name__)
 
 
 def _load_prompt() -> str:
@@ -223,7 +226,7 @@ def _correct_single_page(
     prompt_version = _prompt_hash()
 
     user_message = _build_user_message(page, context_before, context_after)
-    estimated_tokens = provider.estimate_tokens(user_message)
+    estimated_tokens = max(1, len(user_message) // 2)
     # DeepSeek thinking tokens eat ~half the budget — be generous
     max_tokens = max(32768, min(estimated_tokens * 4, config.max_output_tokens))
 
@@ -244,7 +247,17 @@ def _correct_single_page(
 
     for attempt in range(1, config.max_retries + 1):
         try:
+            t0 = time.monotonic()
             response = provider.correct(request)
+            elapsed = time.monotonic() - t0
+
+            logger.info(
+                "%s API call #%d: %d→%d tokens, finish=%s, %.1fs",
+                page.page_id, attempt,
+                response.usage.input_tokens if response.usage else 0,
+                response.usage.output_tokens if response.usage else 0,
+                response.finish_reason, elapsed,
+            )
 
             validation = validate_correction_response(page, response)
             check_names = [name for name, passed, _ in validation.checks if not passed]
@@ -272,12 +285,20 @@ def _correct_single_page(
                 for name, passed, detail in validation.checks
                 if not passed
             )
+            logger.warning(
+                "%s validation failed (attempt %d/%d): %s",
+                page.page_id, attempt, config.max_retries, detail,
+            )
             print(
                 f"  Validation failed for {page.page_id} (attempt {attempt}): {detail}",
                 flush=True,
             )
 
         except Exception as exc:
+            logger.warning(
+                "%s error (attempt %d/%d): %s",
+                page.page_id, attempt, config.max_retries, exc,
+            )
             print(
                 f"  Error correcting {page.page_id} (attempt {attempt}): {exc}",
                 flush=True,
@@ -287,6 +308,7 @@ def _correct_single_page(
                 print(f"  Retrying in {wait}s...", flush=True)
                 time.sleep(wait)
 
+    logger.warning("%s: all %d attempts exhausted, falling back", page.page_id, config.max_retries)
     return _fallback_or_fail(page, config, prompt_version, provider.provider_name)
 
 
@@ -307,7 +329,7 @@ def _correct_batch(
     prompt_version = _prompt_hash()
 
     user_message = _build_batch_message(pages, context_before, context_after)
-    estimated_tokens = provider.estimate_tokens(user_message)
+    estimated_tokens = max(1, len(user_message) // 2)
     # Batch mode: use 4× input as output budget (thinking tokens eat ~half)
     max_tokens = max(32768, min(estimated_tokens * 4, config.max_output_tokens))
 
@@ -335,7 +357,19 @@ def _correct_batch(
             break
 
         try:
+            t0 = time.monotonic()
             response = provider.correct(batch_request)
+            elapsed = time.monotonic() - t0
+
+            logger.info(
+                "batch API call #%d: %d→%d tokens, finish=%s, req=%s, %.1fs",
+                attempt,
+                response.usage.input_tokens if response.usage else 0,
+                response.usage.output_tokens if response.usage else 0,
+                response.finish_reason,
+                response.request_id or "-",
+                elapsed,
+            )
             corrected_texts = _split_batch_response(response.text, pages)
 
             # Validate each page individually
@@ -372,6 +406,13 @@ def _correct_batch(
                 check_names = [n for n, p, _ in validation.checks if not p]
 
                 if validation.passed:
+                    src_len = len(page.source_text)
+                    corr_len = len(corrected)
+                    delta_pct = abs(corr_len - src_len) / max(1, src_len) * 100
+                    logger.info(
+                        "%s: accepted (%.0f%% length change)",
+                        page_id, delta_pct,
+                    )
                     records[page_id] = CorrectionRecord(
                         page_id=page.page_id,
                         source_sha256=page.source_sha256,
@@ -577,6 +618,11 @@ def run_correction_pipeline(
                     corrected_context[i] = cached.corrected_text
                 elif cached.status == "fallback_raw":
                     corrected_context[i] = page.source_text
+                logger.info(
+                    "cache hit: %s (status=%s, in=%d, out=%d)",
+                    page.page_id, cached.status,
+                    cached.input_tokens or 0, cached.output_tokens or 0,
+                )
                 continue
         uncached.append((i, page))
 
@@ -600,6 +646,13 @@ def run_correction_pipeline(
             ctx_after = _build_context_list(
                 i + 1, 1, ctx_pages, pages, corrected_context
             ) if ctx_pages > 0 else None
+
+            ctx_before_ids = [pid for pid, _ in (ctx_before or [])]
+            ctx_after_ids = [pid for pid, _ in (ctx_after or [])]
+            logger.info(
+                "%s: correcting, ctx_before=%s, ctx_after=%s",
+                page.page_id, ctx_before_ids, ctx_after_ids,
+            )
 
             record = _correct_single_page(
                 provider, page, config,
@@ -650,6 +703,16 @@ def run_correction_pipeline(
                 flush=True,
             )
 
+            ctx_before_ids = [pid for pid, _ in (ctx_before or [])]
+            ctx_after_ids = [pid for pid, _ in (ctx_after or [])]
+            logger.info(
+                "batch %d/%d: %d pages [%s–%s], ctx_before=%s, ctx_after=%s",
+                b + 1, batch_count, len(batch_pages),
+                batch_pages[0].page_id, batch_pages[-1].page_id,
+                ctx_before_ids, ctx_after_ids,
+            )
+
+            t_batch = time.monotonic()
             batch_records = _correct_batch(
                 provider, batch_pages, config,
                 ctx_before or None, ctx_after or None,
@@ -668,6 +731,15 @@ def run_correction_pipeline(
                     corrected_context[i] = record.corrected_text
                 elif record.status == "fallback_raw":
                     corrected_context[i] = pages[i].source_text
+                logger.info("cached %s → %s", record.page_id, work_dir)
+
+            batch_elapsed = time.monotonic() - t_batch
+            accepted = sum(1 for r in batch_records if r.status == "accepted")
+            fallback = sum(1 for r in batch_records if r.status == "fallback_raw")
+            logger.info(
+                "batch %d/%d done: %d accepted, %d fallback, %.1fs",
+                b + 1, batch_count, accepted, fallback, batch_elapsed,
+            )
 
     # Sort by original page index and strip index
     results.sort(key=lambda item: item[0])
@@ -683,6 +755,16 @@ def run_correction_pipeline(
         run_status = "completed_with_fallbacks"
     else:
         run_status = "completed"
+
+    accepted = sum(1 for r in final_records if r.status == "accepted")
+    fallback = sum(1 for r in final_records if r.status == "fallback_raw")
+    failed = sum(1 for r in final_records if r.status == "failed")
+    logger.info(
+        "run complete: status=%s, accepted=%d, fallback=%d, failed=%d, "
+        "tokens in=%d out=%d",
+        run_status, accepted, fallback, failed,
+        total_input_tokens, total_output_tokens,
+    )
 
     return CorrectionRunResult(
         pages=final_records,
