@@ -190,8 +190,11 @@ class CorrectionConfig:
     max_retries: int = 1
     """Maximum API attempts including initial call."""
 
-    pages_per_request: int = 1
-    """Pages per API call (1 = most reliable)."""
+    pages_per_request: int = 20
+    """Pages per API call (20 = default batch size)."""
+
+    context_pages: int = 3
+    """Number of context pages on each side of a batch."""
 
     temperature: float = 0.0
     """Sampling temperature."""

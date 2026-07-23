@@ -46,7 +46,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Correct Persian OCR text using an LLM.")
     p.add_argument("input", type=Path, help="OCR'd .txt file")
     p.add_argument("--output", type=Path, default=None, help="Output path (default: <input>.corrected.txt)")
-    p.add_argument("--pages-per-request", type=int, default=1, help="Pages per API call (1 = safest)")
+    p.add_argument("--pages-per-request", type=int, default=20, help="Pages per API call (1 = safest, 20 = default)")
+    p.add_argument("--context-pages", type=int, default=3, help="Context pages on each side of a batch")
     p.add_argument("--max-tokens", type=int, default=0, help="Max tokens per response (0 = auto)")
     p.add_argument("--model", type=str, default=os.environ.get("ANTHROPIC_MODEL", "deepseek-v4-pro"))
     p.add_argument("--estimate-only", action="store_true", help="Print cost estimate and exit")
@@ -95,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         max_output_tokens=max_out,
         max_retries=3,
         pages_per_request=args.pages_per_request,
+        context_pages=args.context_pages,
         fallback_policy="strict" if args.strict else "fallback_raw",
     )
 

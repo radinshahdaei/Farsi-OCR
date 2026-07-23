@@ -57,16 +57,18 @@ class TestBuildUserMessage:
 
     def test_includes_context_before(self):
         page = make_page("page 2")
-        msg = _build_user_message(page, "context page 1", None)
+        msg = _build_user_message(page, [("page-000001", "context page 1")], None)
         assert "[[CONTEXT:" in msg
         assert "context page 1" in msg
         assert "READ ONLY" in msg
+        assert "--- page-000001 ---" in msg
 
     def test_includes_context_after(self):
         page = make_page("page 2")
-        msg = _build_user_message(page, None, "context page 3")
+        msg = _build_user_message(page, None, [("page-000003", "context page 3")])
         assert "[[CONTEXT:" in msg
         assert "context page 3" in msg
+        assert "--- page-000003 ---" in msg
 
     def test_no_context_when_none(self):
         page = make_page("solo")

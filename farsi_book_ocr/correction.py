@@ -33,16 +33,34 @@ def _prompt_hash() -> str:
     return hashlib.sha256(_load_prompt().encode("utf-8")).hexdigest()
 
 
-def _build_user_message(page: PageRecord, context_before: str | None, context_after: str | None) -> str:
+def _build_context_block(pages_info: list[tuple[str, str]], label: str) -> str | None:
+    """Build a multi-page context block.
+
+    Each entry is (page_id, text). Uses --- page-XXXXXX --- sub-markers
+    so the model can distinguish individual context pages.
+    """
+    if not pages_info:
+        return None
+
+    lines = [f"[[CONTEXT: {label} — READ ONLY, DO NOT CORRECT]]"]
+    for pid, text in pages_info:
+        lines.append(f"--- {pid} ---")
+        lines.append(text)
+    lines.append("[[/CONTEXT]]")
+    return "\n".join(lines)
+
+
+def _build_user_message(
+    page: PageRecord,
+    context_before: list[tuple[str, str]] | None,
+    context_after: list[tuple[str, str]] | None,
+) -> str:
     """Build the user message for a single-page correction request."""
     parts: list[str] = []
 
-    if context_before:
-        parts.append(
-            "[[CONTEXT: preceding page — READ ONLY, DO NOT CORRECT]]\n"
-            f"{context_before}\n"
-            "[[/CONTEXT]]"
-        )
+    ctx_before_block = _build_context_block(context_before or [], "preceding pages")
+    if ctx_before_block:
+        parts.append(ctx_before_block)
 
     parts.append(
         f"[[PAGE {page.page_id} — CORRECT THIS PAGE]]\n"
@@ -50,34 +68,32 @@ def _build_user_message(page: PageRecord, context_before: str | None, context_af
         f"[[/PAGE {page.page_id}]]"
     )
 
-    if context_after:
-        parts.append(
-            "[[CONTEXT: following page — READ ONLY, DO NOT CORRECT]]\n"
-            f"{context_after}\n"
-            "[[/CONTEXT]]"
-        )
+    ctx_after_block = _build_context_block(context_after or [], "following pages")
+    if ctx_after_block:
+        parts.append(ctx_after_block)
 
     return "\n\n".join(parts)
 
 
 def _build_batch_message(
     pages: list[PageRecord],
-    context_before: str | None,
-    context_after: str | None,
+    context_before: list[tuple[str, str]] | None,
+    context_after: list[tuple[str, str]] | None,
 ) -> str:
     """Build a user message that corrects multiple pages in one request.
 
     Each page is wrapped in [[PAGE ...]] markers. The model must preserve
     these markers exactly in its response.
+
+    Context before/after: list of (page_id, text) tuples. Multiple context
+    pages are joined into a single [[CONTEXT ... /CONTEXT]] block with
+    --- page-XXXXXX --- sub-markers.
     """
     parts: list[str] = []
 
-    if context_before:
-        parts.append(
-            "[[CONTEXT: preceding page — READ ONLY, DO NOT CORRECT]]\n"
-            f"{context_before}\n"
-            "[[/CONTEXT]]"
-        )
+    ctx_before_block = _build_context_block(context_before or [], "preceding pages")
+    if ctx_before_block:
+        parts.append(ctx_before_block)
 
     for page in pages:
         parts.append(
@@ -86,12 +102,9 @@ def _build_batch_message(
             f"[[/PAGE {page.page_id}]]"
         )
 
-    if context_after:
-        parts.append(
-            "[[CONTEXT: following page — READ ONLY, DO NOT CORRECT]]\n"
-            f"{context_after}\n"
-            "[[/CONTEXT]]"
-        )
+    ctx_after_block = _build_context_block(context_after or [], "following pages")
+    if ctx_after_block:
+        parts.append(ctx_after_block)
 
     return "\n\n".join(parts)
 
@@ -201,8 +214,8 @@ def _correct_single_page(
     provider: CorrectionProvider,
     page: PageRecord,
     config: CorrectionConfig,
-    context_before: str | None,
-    context_after: str | None,
+    context_before: list[tuple[str, str]] | None,
+    context_after: list[tuple[str, str]] | None,
     work_dir: Path,
 ) -> CorrectionRecord:
     """Correct a single page with retry logic."""
@@ -214,6 +227,10 @@ def _correct_single_page(
     # DeepSeek thinking tokens eat ~half the budget — be generous
     max_tokens = max(32768, min(estimated_tokens * 4, config.max_output_tokens))
 
+    # Flatten context for the CorrectionRequest (kept for backward compat)
+    ctx_before_str = "\f".join(t for _, t in (context_before or [])) or None
+    ctx_after_str = "\f".join(t for _, t in (context_after or [])) or None
+
     request = CorrectionRequest(
         page_id=page.page_id,
         source_text=page.source_text,
@@ -221,8 +238,8 @@ def _correct_single_page(
         model=config.model,
         max_tokens=max_tokens,
         temperature=config.temperature,
-        context_before=context_before,
-        context_after=context_after,
+        context_before=ctx_before_str,
+        context_after=ctx_after_str,
     )
 
     for attempt in range(1, config.max_retries + 1):
@@ -277,8 +294,8 @@ def _correct_batch(
     provider: CorrectionProvider,
     pages: list[PageRecord],
     config: CorrectionConfig,
-    context_before: str | None,
-    context_after: str | None,
+    context_before: list[tuple[str, str]] | None,
+    context_after: list[tuple[str, str]] | None,
     work_dir: Path,
 ) -> list[CorrectionRecord]:
     """Correct multiple pages in a single API call, then split and validate each.
@@ -294,6 +311,10 @@ def _correct_batch(
     # Batch mode: use 4× input as output budget (thinking tokens eat ~half)
     max_tokens = max(32768, min(estimated_tokens * 4, config.max_output_tokens))
 
+    # Flatten context for the CorrectionRequest (kept for backward compat)
+    ctx_before_str = "\f".join(t for _, t in (context_before or [])) or None
+    ctx_after_str = "\f".join(t for _, t in (context_after or [])) or None
+
     # Build a single request covering all pages in the batch
     batch_request = CorrectionRequest(
         page_id="batch",
@@ -302,8 +323,8 @@ def _correct_batch(
         model=config.model,
         max_tokens=max_tokens,
         temperature=config.temperature,
-        context_before=context_before,
-        context_after=context_after,
+        context_before=ctx_before_str,
+        context_after=ctx_after_str,
     )
 
     records: dict[str, CorrectionRecord] = {}
@@ -390,10 +411,8 @@ def _correct_batch(
                 for pid, p in list(pending.items()):
                     wait = min(2 ** attempt, 60)
                     time.sleep(wait)
-                    ctx_before = None  # no context on retry — keep it simple
-                    ctx_after = None
                     solo = _correct_single_page(
-                        provider, p, config, ctx_before, ctx_after, work_dir
+                        provider, p, config, None, None, work_dir
                     )
                     records[pid] = solo
                     del pending[pid]
@@ -462,6 +481,47 @@ def _fallback_or_fail(
         )
 
 
+def _get_page_text(
+    page_index: int,
+    pages: list[PageRecord],
+    corrected_context: dict[int, str],
+) -> str | None:
+    """Get the best available text for a page index.
+
+    Returns corrected text if available, otherwise raw source text.
+    Returns None if the index is out of bounds.
+    """
+    if page_index < 0 or page_index >= len(pages):
+        return None
+    return corrected_context.get(page_index, pages[page_index].source_text)
+
+
+def _build_context_list(
+    start_idx: int,
+    direction: int,
+    count: int,
+    pages: list[PageRecord],
+    corrected_context: dict[int, str],
+) -> list[tuple[str, str]]:
+    """Build a context list of (page_id, text) tuples.
+
+    Walks from start_idx in the given direction (-1 for before, +1 for after),
+    collecting up to `count` pages. Uses corrected text when available,
+    raw source otherwise.
+    """
+    ctx: list[tuple[str, str]] = []
+    idx = start_idx
+    while 0 <= idx < len(pages) and len(ctx) < count:
+        text = corrected_context.get(idx, pages[idx].source_text)
+        if text:
+            ctx.append((pages[idx].page_id, text))
+        idx += direction
+    # Context before should be in document order (reverse the backward walk)
+    if direction == -1:
+        ctx.reverse()
+    return ctx
+
+
 def run_correction_pipeline(
     pages: list[PageRecord],
     provider: CorrectionProvider,
@@ -472,9 +532,10 @@ def run_correction_pipeline(
 ) -> CorrectionRunResult:
     """Run the page-safe correction pipeline.
 
-    When config.pages_per_request > 1, uncached pages are grouped into
-    batches and sent in a single API call per batch, then split and
-    validated individually. This dramatically reduces API round-trips.
+    Groups pages into batches of config.pages_per_request. Each batch gets
+    config.context_pages of surrounding context. Corrected text from completed
+    batches is fed forward as context for subsequent batches, so the LLM sees
+    its own spelling/style choices and maintains consistency across the document.
 
     Args:
         pages: Pages to correct, in document order.
@@ -486,12 +547,17 @@ def run_correction_pipeline(
     Returns:
         CorrectionRunResult with per-page records and summary statistics.
     """
-    results: list[CorrectionRecord] = []
+    results: list[tuple[int, CorrectionRecord]] = []
     total_input_tokens = 0
     total_output_tokens = 0
     batch_size = max(1, config.pages_per_request)
+    ctx_pages = max(0, config.context_pages)
 
-    # Phase 1: collect cached results
+    # Track corrected text by page_index — used to feed forward as context.
+    # Maps page_index -> corrected_text (or source_text for fallback pages).
+    corrected_context: dict[int, str] = {}
+
+    # Phase 1: collect cached results and populate corrected_context from them
     uncached: list[tuple[int, PageRecord]] = []
     for i, page in enumerate(pages):
         if resume:
@@ -506,16 +572,39 @@ def run_correction_pipeline(
                     total_input_tokens += cached.input_tokens
                 if cached.output_tokens:
                     total_output_tokens += cached.output_tokens
+                # Seed corrected_context from cache for forward-feed
+                if cached.corrected_text:
+                    corrected_context[i] = cached.corrected_text
+                elif cached.status == "fallback_raw":
+                    corrected_context[i] = page.source_text
                 continue
         uncached.append((i, page))
 
+    if not uncached:
+        # Everything was cached — no API calls needed
+        results.sort(key=lambda item: item[0])
+        final_records = [r for _, r in results]
+        return CorrectionRunResult(
+            pages=final_records,
+            status="completed",
+            total_input_tokens=total_input_tokens,
+            total_output_tokens=total_output_tokens,
+        )
+
     if batch_size == 1:
-        # Single-page mode — use the simple path
+        # Single-page mode
         for i, page in uncached:
-            context_before = pages[i - 1].source_text if i > 0 else None
-            context_after = pages[i + 1].source_text if i + 1 < len(pages) else None
+            ctx_before = _build_context_list(
+                i - 1, -1, ctx_pages, pages, corrected_context
+            ) if ctx_pages > 0 else None
+            ctx_after = _build_context_list(
+                i + 1, 1, ctx_pages, pages, corrected_context
+            ) if ctx_pages > 0 else None
+
             record = _correct_single_page(
-                provider, page, config, context_before, context_after, work_dir
+                provider, page, config,
+                ctx_before or None, ctx_after or None,
+                work_dir,
             )
             _write_cached_record(record, work_dir)
             results.append((i, record))
@@ -523,6 +612,11 @@ def run_correction_pipeline(
                 total_input_tokens += record.input_tokens
             if record.output_tokens:
                 total_output_tokens += record.output_tokens
+            # Feed forward
+            if record.corrected_text:
+                corrected_context[i] = record.corrected_text
+            elif record.status == "fallback_raw":
+                corrected_context[i] = page.source_text
     else:
         # Multi-page batch mode
         batch_count = (len(uncached) + batch_size - 1) // batch_size
@@ -534,18 +628,32 @@ def run_correction_pipeline(
 
             first_idx = batch_indices[0]
             last_idx = batch_indices[-1]
-            context_before = pages[first_idx - 1].source_text if first_idx > 0 else None
-            context_after = pages[last_idx + 1].source_text if last_idx + 1 < len(pages) else None
+
+            # Build context: before = corrected from previous batches,
+            # after = raw source (not yet corrected)
+            ctx_before = _build_context_list(
+                first_idx - 1, -1, ctx_pages, pages, corrected_context
+            ) if ctx_pages > 0 else None
+            ctx_after = _build_context_list(
+                last_idx + 1, 1, ctx_pages, pages, corrected_context
+            ) if ctx_pages > 0 else None
 
             page_range = f"{batch_pages[0].page_id}–{batch_pages[-1].page_id}"
+            ctx_info = ""
+            if ctx_before:
+                ctx_info += f", ctx_before={len(ctx_before)}p"
+            if ctx_after:
+                ctx_info += f", ctx_after={len(ctx_after)}p"
             print(
                 f"  Batch {b + 1}/{batch_count} ({page_range}, "
-                f"{len(batch_pages)} pages)...",
+                f"{len(batch_pages)} pages{ctx_info})...",
                 flush=True,
             )
 
             batch_records = _correct_batch(
-                provider, batch_pages, config, context_before, context_after, work_dir
+                provider, batch_pages, config,
+                ctx_before or None, ctx_after or None,
+                work_dir,
             )
 
             for (i, _), record in zip(batch_slice, batch_records):
@@ -555,6 +663,11 @@ def run_correction_pipeline(
                     total_input_tokens += record.input_tokens
                 if record.output_tokens:
                     total_output_tokens += record.output_tokens
+                # Feed forward for subsequent batches
+                if record.corrected_text:
+                    corrected_context[i] = record.corrected_text
+                elif record.status == "fallback_raw":
+                    corrected_context[i] = pages[i].source_text
 
     # Sort by original page index and strip index
     results.sort(key=lambda item: item[0])

@@ -23,7 +23,7 @@ class TestCLI:
 
     def test_pages_per_request_default(self):
         args = parse_args(["input.txt"])
-        assert args.pages_per_request == 1
+        assert args.pages_per_request == 20
 
     def test_output_path(self):
         args = parse_args(["input.txt", "--output", "out.txt"])
