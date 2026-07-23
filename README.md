@@ -18,16 +18,36 @@ cp .env.example .env  # add your API key
 
 ```bash
 # 1. OCR a scanned PDF
-python -m farsi_book_ocr.ocr_book input/book.pdf --lang fas+ara+eng
+python -m farsi_book_ocr.ocr_book input/book.pdf
 
-# 2. Normalize the OCR output (preserves layout by default)
+# 2. Normalize the OCR output
 python -m farsi_book_ocr.normalize_text output/book_ocr.txt output/book_normalized.txt
-
-# 3. LLM correction
-python -m farsi_book_ocr.correct_text output/book_normalized.txt
 ```
 
-Output: searchable PDF + plain text. Correction uses the page-safe pipeline — every LLM response is validated before acceptance, and no pages are silently dropped.
+Output: searchable PDF + plain text.
+
+## LLM Correction (in development)
+
+The automated LLM correction pipeline is still under development, but you can try it:
+
+```bash
+# 3. LLM correction (experimental — requires .env with API key)
+python -m farsi_book_ocr.correct_text output/book_normalized.txt
+```
+For now, the recommended workflow is:
+
+1. Generate the OCR output (Stage 1 above)
+2. Normalize the text (Stage 2 above)
+3. Feed the normalized output into a chatbot (ChatGPT, etc.) for manual correction.
+
+### Motivation
+
+Very large scanned books with unreadable PDF text are difficult for chatbots to
+process directly — the file sizes are too large and the raw scanned content is
+not recognizable as text. This pipeline solves that by first running OCR to
+extract readable plain text, then normalizing it for Persian-specific issues,
+so the output is small enough and clean enough to feed into a chatbot for
+correction.
 
 ## Pipeline
 
